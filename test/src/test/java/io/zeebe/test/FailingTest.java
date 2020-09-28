@@ -14,6 +14,7 @@ public class FailingTest {
 
   @Test
   public void shouldFail() {
+    // This is just a small change, to cause another build based on a real commit
     Assert.fail("This is a failure made specifically for testing the CI build");
   }
 }
