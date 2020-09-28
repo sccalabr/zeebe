@@ -290,9 +290,35 @@ pipeline {
         }
         changed {
             script {
-                if (env.BRANCH_NAME == 'develop' && !agentDisconnected()) {
+                if (currentBuild.currentResult == 'ABORTED' || agentDisconnected()) {
+                    return
+                }
+
+                echo "Looking for most recent non-aborted previous build"
+                def previousBuild = currentBuild.previousBuild
+                while(previousBuild != null && previousBuild.result == 'ABORTED') {
+                    echo "Skipping over an aborted build ${previousBuild.fullDisplayName}"
+                    previousBuild = previousBuild.previousBuild
+                }
+                def shouldSendSlack = false
+                if (previousBuild == null) {
+                    echo "No previous non-aborted builds found"
+                    shouldSendSlack = true
+                } else {
+                  if (previousBuild.result == 'FAILURE' && currentBuild.currentResult == 'SUCCESS') {
+                    echo "Build is fixed"
+                    shouldSendSlack = true
+                  }
+                  if (previousBuild.result == 'SUCCESS' && currentBuild.currentResult == 'FAILURE') {
+                    echo 'Build has regressed'
+                    shouldSendSlack = true
+                  }
+                }
+
+                if (shouldSendSlack) {
+                    echo "Send slack message"
                     slackSend(
-                        channel: "#zeebe-ci${jenkins.model.JenkinsLocationConfiguration.get()?.getUrl()?.contains('stage') ? '-stage' : ''}",
+                        channel: "#zeebe-ci-test",
                         message: "Zeebe ${env.BRANCH_NAME} build ${currentBuild.absoluteUrl} changed status to ${currentBuild.currentResult}")
                 }
             }
