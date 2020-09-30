@@ -302,7 +302,6 @@ func main() {
 
 	<-readyClose
 	jobWorker.Close()
-	jobWorker.AwaitClose()
 }
 
 func handleJob(client worker.JobClient, job entities.Job) {
