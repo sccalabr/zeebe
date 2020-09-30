@@ -25,12 +25,14 @@ import java.net.UnknownHostException;
 
 /** Multicast configuration. */
 public class MulticastConfig implements Config {
+  private static final String DEFAULT_MULTICAST_HOST = "0.0.0.0";
   private static final String DEFAULT_MULTICAST_IP = "230.0.0.1";
   private static final int DEFAULT_MULTICAST_PORT = 54321;
 
   private boolean enabled = false;
   private InetAddress group;
   private int port = DEFAULT_MULTICAST_PORT;
+  private String host = DEFAULT_MULTICAST_HOST;
 
   public MulticastConfig() {
     try {
@@ -38,6 +40,27 @@ public class MulticastConfig implements Config {
     } catch (final UnknownHostException e) {
       group = null;
     }
+  }
+
+  /**
+   * Returns the local interface against which the broadcasting service will bind to. Defaults to
+   * {@link #DEFAULT_MULTICAST_HOST}.
+   *
+   * @return the local interface against which the broadcasting service will bind to
+   */
+  public String getHost() {
+    return host;
+  }
+
+  /**
+   * Sets the local interface to which Atomix will bind for broadcasting.
+   *
+   * @param host the local broadcasting interface to bind to
+   * @return the local messaging configuration
+   */
+  public MulticastConfig setHost(final String host) {
+    this.host = host;
+    return this;
   }
 
   /**

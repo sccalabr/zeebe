@@ -23,7 +23,6 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.atomix.cluster.messaging.BroadcastService;
 import io.atomix.cluster.messaging.ManagedBroadcastService;
-import io.atomix.utils.AtomixRuntimeException;
 import io.atomix.utils.net.Address;
 import io.atomix.utils.serializer.Namespace;
 import io.atomix.utils.serializer.Namespaces;
@@ -31,6 +30,7 @@ import io.atomix.utils.serializer.Serializer;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
@@ -41,6 +41,7 @@ import io.netty.channel.socket.DatagramChannel;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.socket.nio.NioDatagramChannel;
+import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
@@ -55,6 +56,7 @@ import org.slf4j.LoggerFactory;
 /** Netty broadcast service. */
 public class NettyBroadcastService implements ManagedBroadcastService {
 
+  private static final Logger LOG = LoggerFactory.getLogger(NettyMessagingService.class);
   private static final Serializer SERIALIZER =
       Serializer.using(
           Namespace.builder()
@@ -63,7 +65,7 @@ public class NettyBroadcastService implements ManagedBroadcastService {
               .register(Message.class)
               .setCompatible(true)
               .build());
-  private final Logger log = LoggerFactory.getLogger(getClass());
+
   private final boolean enabled;
   private final InetSocketAddress localAddress;
   private final InetSocketAddress groupAddress;
@@ -75,15 +77,14 @@ public class NettyBroadcastService implements ManagedBroadcastService {
   private final AtomicBoolean started = new AtomicBoolean();
 
   public NettyBroadcastService(
-      final Address localAddress, final Address groupAddress, final boolean enabled) {
+      final String host, final Address groupAddress, final boolean enabled) {
     this.enabled = enabled;
-    // intentionally using the multicast port for localAddress
-    this.localAddress = new InetSocketAddress(localAddress.host(), groupAddress.port());
+    localAddress = new InetSocketAddress(host, groupAddress.port());
     this.groupAddress = new InetSocketAddress(groupAddress.host(), groupAddress.port());
     try {
-      iface = NetworkInterface.getByInetAddress(localAddress.address());
+      iface = NetworkInterface.getByInetAddress(localAddress.getAddress());
     } catch (final SocketException e) {
-      throw new AtomixRuntimeException(e);
+      throw new UncheckedIOException(e);
     }
   }
 
@@ -129,7 +130,7 @@ public class NettyBroadcastService implements ManagedBroadcastService {
             .group(group)
             .channelFactory(() -> new NioDatagramChannel(InternetProtocolFamily.IPv4))
             .handler(
-                new SimpleChannelInboundHandler<Object>() {
+                new SimpleChannelInboundHandler<>() {
                   @Override
                   public void channelRead0(final ChannelHandlerContext ctx, final Object msg)
                       throws Exception {
@@ -140,18 +141,18 @@ public class NettyBroadcastService implements ManagedBroadcastService {
             .option(ChannelOption.SO_REUSEADDR, true);
 
     final CompletableFuture<Void> future = new CompletableFuture<>();
-    serverBootstrap
-        .bind(localAddress)
-        .addListener(
-            (ChannelFutureListener)
-                f -> {
-                  if (f.isSuccess()) {
-                    serverChannel = f.channel();
-                    future.complete(null);
-                  } else {
-                    future.completeExceptionally(f.cause());
-                  }
-                });
+    final ChannelFuture result = serverBootstrap.bind(localAddress);
+    result.addListener(
+        f -> {
+          if (f.isSuccess()) {
+            serverChannel = result.channel();
+            LOG.debug("Bound broadcasting service to {}", localAddress);
+            future.complete(null);
+          } else {
+            LOG.warn("Failed to bind broadcasting service to {}", localAddress, f.cause());
+            future.completeExceptionally(f.cause());
+          }
+        });
     return future;
   }
 
@@ -190,7 +191,7 @@ public class NettyBroadcastService implements ManagedBroadcastService {
                 f -> {
                   if (f.isSuccess()) {
                     clientChannel = (DatagramChannel) f.channel();
-                    log.info(
+                    LOG.info(
                         "{} joining multicast group {} on port {}",
                         localAddress.getHostName(),
                         groupAddress.getHostName(),
@@ -200,14 +201,14 @@ public class NettyBroadcastService implements ManagedBroadcastService {
                         .addListener(
                             f2 -> {
                               if (f2.isSuccess()) {
-                                log.info(
+                                LOG.info(
                                     "{} successfully joined multicast group {} on port {}",
                                     localAddress.getHostName(),
                                     groupAddress.getHostName(),
                                     groupAddress.getPort());
                                 future.complete(null);
                               } else {
-                                log.info(
+                                LOG.info(
                                     "{} failed to join group {} on port {}",
                                     localAddress.getHostName(),
                                     groupAddress.getHostName(),
@@ -227,7 +228,7 @@ public class NettyBroadcastService implements ManagedBroadcastService {
     if (!enabled) {
       return CompletableFuture.completedFuture(this);
     }
-    group = new NioEventLoopGroup(0, namedThreads("netty-broadcast-event-nio-client-%d", log));
+    group = new NioEventLoopGroup(0, namedThreads("netty-broadcast-event-nio-client-%d", LOG));
     return bootstrapServer()
         .thenCompose(v -> bootstrapClient())
         .thenRun(() -> started.set(true))
@@ -262,18 +263,19 @@ public class NettyBroadcastService implements ManagedBroadcastService {
 
   /** Netty broadcast service builder. */
   public static class Builder implements BroadcastService.Builder {
-    private Address localAddress;
+    private String host;
     private Address groupAddress;
     private boolean enabled = true;
 
     /**
-     * Sets the local address.
+     * Sets the host interface against which to bind. The port will be taken from the {@code
+     * groupAddress}. Defaults to 0.0.0.0.
      *
-     * @param address the local address
-     * @return the broadcast service builder
+     * @param host the host interface to bind to
+     * @return this builder
      */
-    public Builder withLocalAddress(final Address address) {
-      localAddress = checkNotNull(address);
+    public Builder withHost(final String host) {
+      this.host = checkNotNull(host);
       return this;
     }
 
@@ -301,7 +303,7 @@ public class NettyBroadcastService implements ManagedBroadcastService {
 
     @Override
     public ManagedBroadcastService build() {
-      return new NettyBroadcastService(localAddress, groupAddress, enabled);
+      return new NettyBroadcastService(host, groupAddress, enabled);
     }
   }
 

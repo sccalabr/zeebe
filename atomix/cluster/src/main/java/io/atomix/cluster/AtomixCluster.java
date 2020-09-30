@@ -401,7 +401,7 @@ public class AtomixCluster implements BootstrapService, Managed<Void> {
   /** Builds a default broadcast service. */
   protected static ManagedBroadcastService buildBroadcastService(final ClusterConfig config) {
     return NettyBroadcastService.builder()
-        .withLocalAddress(config.getNodeConfig().getAddress())
+        .withHost(config.getMulticastConfig().getHost())
         .withGroupAddress(
             new Address(
                 config.getMulticastConfig().getGroup().getHostAddress(),

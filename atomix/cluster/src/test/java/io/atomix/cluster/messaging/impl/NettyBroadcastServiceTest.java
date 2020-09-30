@@ -31,12 +31,11 @@ import org.slf4j.Logger;
 public class NettyBroadcastServiceTest extends ConcurrentTestCase {
 
   private static final Logger LOGGER = getLogger(NettyBroadcastServiceTest.class);
+  private static final String BROADCAST_INTERFACE_HOST = "127.0.0.1";
 
   ManagedBroadcastService netty1;
   ManagedBroadcastService netty2;
 
-  Address localAddress1;
-  Address localAddress2;
   Address groupAddress;
 
   @Test
@@ -54,14 +53,12 @@ public class NettyBroadcastServiceTest extends ConcurrentTestCase {
 
   @Before
   public void setUp() throws Exception {
-    localAddress1 = Address.from("127.0.0.1", SocketUtil.getNextAddress().getPort());
-    localAddress2 = Address.from("127.0.0.1", SocketUtil.getNextAddress().getPort());
     groupAddress = Address.from("230.0.0.1", SocketUtil.getNextAddress().getPort());
 
     netty1 =
         (ManagedBroadcastService)
             NettyBroadcastService.builder()
-                .withLocalAddress(localAddress1)
+                .withHost(BROADCAST_INTERFACE_HOST)
                 .withGroupAddress(groupAddress)
                 .build()
                 .start()
@@ -70,7 +67,7 @@ public class NettyBroadcastServiceTest extends ConcurrentTestCase {
     netty2 =
         (ManagedBroadcastService)
             NettyBroadcastService.builder()
-                .withLocalAddress(localAddress2)
+                .withHost(BROADCAST_INTERFACE_HOST)
                 .withGroupAddress(groupAddress)
                 .build()
                 .start()
