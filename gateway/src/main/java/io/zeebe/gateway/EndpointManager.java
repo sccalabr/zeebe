@@ -17,6 +17,7 @@ import io.zeebe.gateway.cmd.BrokerRejectionException;
 import io.zeebe.gateway.cmd.InvalidBrokerRequestArgumentException;
 import io.zeebe.gateway.cmd.PartitionNotFoundException;
 import io.zeebe.gateway.impl.broker.BrokerClient;
+import io.zeebe.gateway.impl.broker.RequestRetriesExhaustedException;
 import io.zeebe.gateway.impl.broker.RequestRetryHandler;
 import io.zeebe.gateway.impl.broker.cluster.BrokerClusterState;
 import io.zeebe.gateway.impl.broker.cluster.BrokerTopologyManager;
@@ -419,6 +420,9 @@ public final class EndpointManager extends GatewayGrpc.GatewayImplBase {
       status = Status.NOT_FOUND.augmentDescription(cause.getMessage());
       Loggers.GATEWAY_LOGGER.debug(
           "Expected to handle gRPC request, but request could not be delivered", cause);
+    } else if (cause instanceof RequestRetriesExhaustedException) {
+      Loggers.GATEWAY_LOGGER.debug(
+          "Expected to handle gRPC request, but all retries have been exhausted", cause);
     } else {
       status = status.augmentDescription("Unexpected error occurred during the request processing");
       Loggers.GATEWAY_LOGGER.error(

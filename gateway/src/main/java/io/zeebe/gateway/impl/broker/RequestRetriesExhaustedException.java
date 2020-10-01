@@ -9,7 +9,9 @@ package io.zeebe.gateway.impl.broker;
 
 import io.zeebe.gateway.cmd.ClientException;
 
-class RequestRetriesExhaustedException extends ClientException {
+public class RequestRetriesExhaustedException extends ClientException {
+
+  private static final long serialVersionUID = 1493435667474886479L;
 
   RequestRetriesExhaustedException() {
     super(
