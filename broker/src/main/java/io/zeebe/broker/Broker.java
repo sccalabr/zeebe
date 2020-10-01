@@ -37,9 +37,22 @@ import io.zeebe.broker.system.management.deployment.PushDeploymentRequestHandler
 import io.zeebe.broker.system.monitoring.BrokerHealthCheckService;
 import io.zeebe.broker.system.monitoring.DiskSpaceUsageListener;
 import io.zeebe.broker.system.monitoring.DiskSpaceUsageMonitor;
+import io.zeebe.broker.system.partitions.Component;
 import io.zeebe.broker.system.partitions.TypedRecordProcessorsFactory;
 import io.zeebe.broker.system.partitions.ZeebePartition;
 import io.zeebe.broker.system.partitions.impl.AtomixPartitionMessagingService;
+import io.zeebe.broker.system.partitions.impl.PartitionTransitionBehaviorImpl;
+import io.zeebe.broker.system.partitions.impl.components.ExporterDirectorComponent;
+import io.zeebe.broker.system.partitions.impl.components.FollowerPostStorageComponent;
+import io.zeebe.broker.system.partitions.impl.components.LeaderPostStorageComponent;
+import io.zeebe.broker.system.partitions.impl.components.LogDeletionComponent;
+import io.zeebe.broker.system.partitions.impl.components.LogStreamComponent;
+import io.zeebe.broker.system.partitions.impl.components.RaftLogReaderComponent;
+import io.zeebe.broker.system.partitions.impl.components.RocksDbMetricExporterComponent;
+import io.zeebe.broker.system.partitions.impl.components.SnapshotReplicationComponent;
+import io.zeebe.broker.system.partitions.impl.components.StateControllerComponent;
+import io.zeebe.broker.system.partitions.impl.components.StreamProcessorComponent;
+import io.zeebe.broker.system.partitions.impl.components.ZeebeDbComponent;
 import io.zeebe.broker.transport.backpressure.PartitionAwareRequestLimiter;
 import io.zeebe.broker.transport.commandapi.CommandApiService;
 import io.zeebe.engine.processing.EngineProcessors;
@@ -354,6 +367,29 @@ public final class Broker implements AutoCloseable {
                     atomix.getCommunicationService(),
                     atomix.getMembershipService(),
                     owningPartition.members());
+
+            final List<Component<?>> leaderComponents =
+                List.of(
+                    new LogStreamComponent(),
+                    new RaftLogReaderComponent(),
+                    new SnapshotReplicationComponent(),
+                    new StateControllerComponent(),
+                    new LogDeletionComponent(),
+                    new LeaderPostStorageComponent(),
+                    new ZeebeDbComponent(),
+                    new StreamProcessorComponent(),
+                    new RocksDbMetricExporterComponent(),
+                    new ExporterDirectorComponent());
+            final List<Component<?>> followerComponents =
+                List.of(
+                    new RaftLogReaderComponent(),
+                    new SnapshotReplicationComponent(),
+                    new StateControllerComponent(),
+                    new LogDeletionComponent(),
+                    new FollowerPostStorageComponent());
+            final PartitionTransitionBehaviorImpl transitionBehavior =
+                new PartitionTransitionBehaviorImpl(null, leaderComponents, followerComponents);
+
             final ZeebePartition zeebePartition =
                 new ZeebePartition(
                     localBroker,
